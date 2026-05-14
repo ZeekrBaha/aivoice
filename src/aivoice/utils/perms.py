@@ -25,10 +25,15 @@ def check_microphone() -> bool:
 
 def check_accessibility() -> bool:
     try:
-        from ApplicationServices import AXIsProcessTrusted
-        return bool(AXIsProcessTrusted())
+        from ApplicationServices import AXIsProcessTrustedWithOptions
+        # prompt=True shows the system dialog the first time
+        return bool(AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": True}))
     except Exception:
-        return False
+        try:
+            from ApplicationServices import AXIsProcessTrusted
+            return bool(AXIsProcessTrusted())
+        except Exception:
+            return False
 
 
 def check_input_monitoring() -> bool:
