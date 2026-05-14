@@ -8,10 +8,14 @@ from aivoice.pipeline.stt.base import STTEngine
 
 
 class FakeSTT(STTEngine):
+    def __init__(self):
+        self.last_initial_prompt: str | None = None
+
     async def warmup(self) -> None:
         pass
 
-    async def transcribe(self, audio, samplerate=16000):
+    async def transcribe(self, audio, samplerate=16000, initial_prompt=None):
+        self.last_initial_prompt = initial_prompt
         return "hello world"
 
 
@@ -107,3 +111,63 @@ async def test_double_press_is_idempotent():
     await orch.on_press()  # second press while held — should be ignored
     await orch.on_release()
     assert len(inj.injected) == 1
+
+
+@pytest.mark.asyncio
+async def test_vocabulary_becomes_initial_prompt():
+    stt = FakeSTT()
+    orch = Orchestrator(
+        audio=FakeAudio(),
+        vad=PassthroughVAD(),
+        stt=stt,
+        cleaner=None,
+        injector=FakeInjector(),
+        vocabulary=["README", "ZeekrBaha"],
+    )
+    await orch.on_press()
+    await orch.on_release()
+    assert stt.last_initial_prompt is not None
+    assert "README" in stt.last_initial_prompt
+    assert "ZeekrBaha" in stt.last_initial_prompt
+
+
+@pytest.mark.asyncio
+async def test_empty_vocabulary_means_no_initial_prompt():
+    stt = FakeSTT()
+    orch = Orchestrator(
+        audio=FakeAudio(),
+        vad=PassthroughVAD(),
+        stt=stt,
+        cleaner=None,
+        injector=FakeInjector(),
+    )
+    await orch.on_press()
+    await orch.on_release()
+    assert stt.last_initial_prompt is None
+
+
+@pytest.mark.asyncio
+async def test_trailing_silence_padded_before_stt():
+    class CapturingSTT(STTEngine):
+        def __init__(self):
+            self.received_len = 0
+
+        async def warmup(self):
+            pass
+
+        async def transcribe(self, audio, samplerate=16000, initial_prompt=None):
+            self.received_len = len(audio)
+            return "x"
+
+    stt = CapturingSTT()
+    orch = Orchestrator(
+        audio=FakeAudio(),  # produces 16000 samples (1s) at 16kHz
+        vad=PassthroughVAD(),
+        stt=stt,
+        cleaner=None,
+        injector=FakeInjector(),
+    )
+    await orch.on_press()
+    await orch.on_release()
+    # FakeAudio gives 16000 samples; pad adds 16000 more (1s at 16kHz).
+    assert stt.received_len == 32000

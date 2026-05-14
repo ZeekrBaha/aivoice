@@ -22,9 +22,13 @@ AudioCapture.start()    AudioCapture.stop()
                     ┌────────────────────────┐
                     │  local_mlx (default)   │
                     │  mlx-whisper           │
-                    │  distil-whisper-large-v3│
+                    │  whisper-large-v3-turbo│
                     │  runs on Apple Silicon │
                     │  Neural Engine (ANE)   │
+                    │  + initial_prompt      │
+                    │    biasing from vocab  │
+                    │  + 1s trailing silence │
+                    │    pad (no word drops) │
                     ├────────────────────────┤
                     │  cloud_groq (optional) │
                     │  whisper-large-v3-turbo│
@@ -32,16 +36,18 @@ AudioCapture.start()    AudioCapture.stop()
                     └────────────────────────┘
                              │
                              ▼
-                    LLMCleaner.clean()  (optional)
+                    LLMCleaner.clean()  (on by default)
                     ┌────────────────────────┐
                     │  ollama (default)      │
-                    │  qwen2.5-coder:7b      │
+                    │  qwen2.5:7b-instruct   │
                     │  runs locally          │
                     ├────────────────────────┤
                     │  openai (optional)     │
                     │  gpt-4o-mini           │
                     └────────────────────────┘
-                    removes filler words, fixes punctuation
+                    fixes filler words, punctuation,
+                    proper-noun phonetic mis-matches
+                    (via vocabulary + few-shot examples)
                              │
                              ▼
                     ClipboardInjector.inject()
@@ -107,8 +113,8 @@ Background thread (daemon)
 
 | Component | Default | Alternative |
 |-----------|---------|-------------|
-| STT | `mlx-community/distil-whisper-large-v3` (local, Apple Silicon) | `whisper-large-v3-turbo` via Groq |
-| Cleanup | `qwen2.5-coder:7b` via Ollama (local) | `gpt-4o-mini` via OpenAI |
+| STT | `mlx-community/whisper-large-v3-turbo` (local, Apple Silicon) | `whisper-large-v3-turbo` via Groq |
+| Cleanup | `qwen2.5:7b-instruct` via Ollama (local, on by default) | `gpt-4o-mini` via OpenAI |
 | VAD | `silero-vad` ONNX (local) | — |
 
 **Local vs cloud trade-offs:**
@@ -127,7 +133,7 @@ Background thread (daemon)
 
 - macOS 13+ on Apple Silicon (M1/M2/M3/M4)
 - [uv](https://docs.astral.sh/uv/) — Python package manager
-- [Ollama](https://ollama.com) with `qwen2.5-coder:7b` pulled (for cleanup)
+- [Ollama](https://ollama.com) with `qwen2.5:7b-instruct` pulled (for cleanup)
 - macOS permissions: **Microphone**, **Accessibility**, **Input Monitoring**
 
 ---
@@ -143,7 +149,7 @@ cd aivoice
 uv sync
 
 # 3. Pull the local LLM (for cleanup)
-ollama pull qwen2.5-coder:7b
+ollama pull qwen2.5:7b-instruct
 
 # 4. Optional: set Groq API key for cloud STT
 echo "GROQ_API_KEY=your_key_here" > .env
@@ -175,11 +181,13 @@ Edit `~/.config/aivoice/settings.toml`:
 ```toml
 # STT engine: "local_mlx" (default) or "cloud_groq"
 stt_engine = "local_mlx"
+local_mlx_model = "mlx-community/whisper-large-v3-turbo"
 
-# Enable LLM cleanup (removes filler words, fixes punctuation)
+# LLM cleanup (on by default — removes fillers, fixes punctuation,
+# corrects phonetic mis-recognitions of proper nouns)
 cleanup_enabled = true
 cleanup_engine = "ollama"          # "ollama" or "openai"
-ollama_cleanup_model = "qwen2.5-coder:7b"
+ollama_cleanup_model = "qwen2.5:7b-instruct"
 
 # Hotkey: "alt" (Option), "cmd", "ctrl", "shift"
 hotkey = "alt"
@@ -187,8 +195,12 @@ hotkey = "alt"
 # Cleanup mode: "raw", "email", "code-comment", "slack"
 mode = "raw"
 
-# Custom vocabulary hints passed to the cleaner
-vocabulary = ["myCompany", "productName"]
+# Vocabulary — names, technical terms, emails, etc.
+# Used in two places:
+#   1. Whisper's initial_prompt (biases decoding toward these spellings)
+#   2. The cleanup LLM (corrects phonetic mis-matches against this list)
+# Keep under ~30 items — Whisper only honors the last ~200 tokens.
+vocabulary = ["README", "ZeekrBaha", "baha.sadri@gmail.com", "kubectl", "Playwright"]
 ```
 
 ---
@@ -221,7 +233,7 @@ uv sync --extra dev
 uv run pytest
 ```
 
-20 tests covering: config loading, audio capture, VAD trimming, STT engines, cleanup prompts, clipboard injection, orchestrator pipeline, and hotkey guard logic.
+23 tests covering: config loading, audio capture, VAD trimming, STT engines, cleanup prompts, clipboard injection, orchestrator pipeline (including `initial_prompt` plumbing and trailing-silence padding), and hotkey guard logic.
 
 ---
 

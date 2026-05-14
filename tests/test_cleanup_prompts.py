@@ -20,11 +20,11 @@ def test_build_appends_mode():
 
 def test_build_appends_vocabulary():
     p = build_prompt(mode="raw", vocabulary=["kubectl", "Playwright"])
-    assert "VOCABULARY HINTS" in p
+    assert "VOCABULARY" in p
     assert "- kubectl" in p
     assert "- Playwright" in p
 
 
 def test_build_no_vocab_section_when_empty():
     p = build_prompt(mode="raw", vocabulary=[])
-    assert "VOCABULARY HINTS" not in p
+    assert "VOCABULARY (preserve" not in p

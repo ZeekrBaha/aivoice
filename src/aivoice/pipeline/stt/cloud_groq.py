@@ -23,7 +23,12 @@ class CloudGroqEngine(STTEngine):
             raise RuntimeError("GROQ_API_KEY not set (env or keychain)")
         self._client = AsyncGroq(api_key=api_key)
 
-    async def transcribe(self, audio: np.ndarray, samplerate: int = 16000) -> str:
+    async def transcribe(
+        self,
+        audio: np.ndarray,
+        samplerate: int = 16000,
+        initial_prompt: str | None = None,
+    ) -> str:
         if len(audio) == 0:
             return ""
         if self._client is None:
@@ -34,10 +39,14 @@ class CloudGroqEngine(STTEngine):
         buf.seek(0)
         buf.name = "audio.wav"  # groq client inspects .name for content-type
 
-        resp = await self._client.audio.transcriptions.create(
-            file=buf,
-            model=self.model,
-            language=self.language,
-            response_format="text",
-        )
+        kwargs = {
+            "file": buf,
+            "model": self.model,
+            "language": self.language,
+            "response_format": "text",
+        }
+        if initial_prompt:
+            kwargs["prompt"] = initial_prompt
+
+        resp = await self._client.audio.transcriptions.create(**kwargs)
         return resp.strip() if isinstance(resp, str) else resp.text.strip()

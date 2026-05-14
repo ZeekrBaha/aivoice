@@ -15,6 +15,14 @@ echo "==> Creating bundle structure…"
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES"
 
+# Build the .icns icon if it's missing (or always, since the generator is cheap).
+ICON_SRC="build/icon.icns"
+if [ ! -f "$ICON_SRC" ]; then
+  echo "==> Generating app icon…"
+  uv run --with pillow python scripts/gen_icon.py
+fi
+cp "$ICON_SRC" "$RESOURCES/icon.icns"
+
 # Launcher script — runs aivoice inside the repo's venv
 cat > "$MACOS/aivoice" <<'LAUNCHER'
 #!/usr/bin/env bash
@@ -36,6 +44,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleVersion</key>          <string>0.1.0</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleExecutable</key>       <string>aivoice</string>
+  <key>CFBundleIconFile</key>         <string>icon</string>
   <key>CFBundlePackageType</key>      <string>APPL</string>
   <key>LSUIElement</key>              <true/>
   <key>NSMicrophoneUsageDescription</key>

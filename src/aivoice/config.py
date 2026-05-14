@@ -10,13 +10,13 @@ from pydantic import BaseModel, Field
 
 class Settings(BaseModel):
     stt_engine: Literal["local_mlx", "cloud_groq"] = "local_mlx"
-    local_mlx_model: str = "mlx-community/distil-whisper-large-v3"
+    local_mlx_model: str = "mlx-community/whisper-large-v3-turbo"
     cloud_groq_model: str = "whisper-large-v3-turbo"
 
-    cleanup_enabled: bool = False
+    cleanup_enabled: bool = True
     cleanup_engine: Literal["openai", "ollama"] = "ollama"
     openai_cleanup_model: str = "gpt-4o-mini"
-    ollama_cleanup_model: str = "qwen2.5-coder:7b"
+    ollama_cleanup_model: str = "qwen2.5:7b-instruct"
 
     hotkey: str = "alt"
     mode: Literal["raw", "email", "code-comment", "slack"] = "raw"
