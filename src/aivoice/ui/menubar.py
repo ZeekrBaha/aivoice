@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from AppKit import NSBundle
 
+from AppKit import NSBundle
 import rumps
 
-# Tell macOS this is a UI agent (shows menu bar icon, no Dock icon)
+# Dev-mode fallback: set LSUIElement so the menu bar icon shows when running
+# via `uv run aivoice`. In a proper .app bundle this comes from Info.plist.
 NSBundle.mainBundle().infoDictionary()["LSUIElement"] = "1"
 
 from aivoice.config import Settings
