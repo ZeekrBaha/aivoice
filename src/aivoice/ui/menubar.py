@@ -64,10 +64,9 @@ class AivoiceApp(rumps.App):
         if not perms.all_ok:
             log.warning("Missing permissions: %s", perms)
             self.title = ERROR
-            rumps.notification(
-                "aivoice",
-                "Permission required",
-                "Grant Accessibility + Input Monitoring in System Settings → Privacy & Security",
+            log.error(
+                "Grant Accessibility + Input Monitoring in "
+                "System Settings → Privacy & Security, then restart aivoice"
             )
             return
 
