@@ -1,6 +1,10 @@
 import sys
 
+from dotenv import load_dotenv
+
 from aivoice.version import __version__
+
+load_dotenv()
 
 
 def main() -> int:
