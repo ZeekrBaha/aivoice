@@ -14,9 +14,9 @@ class Settings(BaseModel):
     cloud_groq_model: str = "whisper-large-v3-turbo"
 
     cleanup_enabled: bool = False
-    cleanup_engine: Literal["openai", "ollama"] = "openai"
+    cleanup_engine: Literal["openai", "ollama"] = "ollama"
     openai_cleanup_model: str = "gpt-4o-mini"
-    ollama_cleanup_model: str = "qwen2.5:7b-instruct"
+    ollama_cleanup_model: str = "qwen2.5-coder:7b"
 
     hotkey: str = "alt"
     mode: Literal["raw", "email", "code-comment", "slack"] = "raw"
