@@ -20,6 +20,7 @@ dependencies = [
     "groq>=0.13",
     "ollama>=0.4",
     "mlx-whisper>=0.4.2 ; platform_system == 'Darwin' and platform_machine == 'arm64'",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]
