@@ -142,7 +142,7 @@ Background thread (daemon)
 
 ```bash
 # 1. Clone
-git clone https://github.com/ZKirbaha/aivoice.git
+git clone https://github.com/ZeekrBaha/aivoice.git
 cd aivoice
 
 # 2. Install dependencies
@@ -251,9 +251,3 @@ ai-voice-dictation/
 ├── pyproject.toml      # Project metadata + dependencies
 └── .env                # GROQ_API_KEY (never committed)
 ```
-
----
-
-## License
-
-MIT
