@@ -3,8 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from AppKit import NSBundle
 
 import rumps
+
+# Tell macOS this is a UI agent (shows menu bar icon, no Dock icon)
+NSBundle.mainBundle().infoDictionary()["LSUIElement"] = "1"
 
 from aivoice.config import Settings
 from aivoice.pipeline.audio import AudioCapture
