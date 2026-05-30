@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-import asyncio
+import logging
+from typing import Callable
 
 import numpy as np
 import sounddevice as sd
+
+from aivoice.pipeline.levels import normalized, rms
+
+log = logging.getLogger(__name__)
 
 
 class AudioCapture:
@@ -12,10 +17,19 @@ class AudioCapture:
         self.blocksize = blocksize
         self._stream: sd.InputStream | None = None
         self._frames: list[np.ndarray] = []
+        # Optional per-block mic level (0..1). Called on the PortAudio audio
+        # thread; consumers must marshal to their own thread before touching UI.
+        self.on_level: Callable[[float], None] | None = None
 
     def _callback(self, indata, frames, time_info, status) -> None:
         # copy to avoid buffer reuse by PortAudio
-        self._frames.append(indata[:, 0].astype(np.float32, copy=True))
+        block = indata[:, 0].astype(np.float32, copy=True)
+        self._frames.append(block)
+        if self.on_level is not None:
+            try:
+                self.on_level(normalized(rms(block)))
+            except Exception:  # never let a UI callback kill the audio stream
+                log.debug("on_level callback failed", exc_info=True)
 
     async def start(self) -> None:
         if self._stream is not None:
