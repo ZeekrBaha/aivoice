@@ -317,7 +317,7 @@ class OverlayController:
 
     def _build_bars(self, wave_view) -> None:
         from AppKit import NSColor
-        from QuartzCore import CALayer
+        from Quartz import CALayer
 
         self._bars = []
         for i in range(_BAR_COUNT):
@@ -362,7 +362,7 @@ class OverlayController:
         if reduce_motion:
             self._fade(layer, 0.0, 1.0, 0.15)
             return
-        from QuartzCore import CABasicAnimation, CASpringAnimation
+        from Quartz import CABasicAnimation, CASpringAnimation
 
         layer.setOpacity_(1.0)
         fade = CABasicAnimation.animationWithKeyPath_("opacity")
@@ -388,7 +388,7 @@ class OverlayController:
             panel.orderOut_(None)
             return
 
-        from QuartzCore import CABasicAnimation
+        from Quartz import CABasicAnimation
 
         dur = 0.14
         fade = CABasicAnimation.animationWithKeyPath_("opacity")
@@ -419,7 +419,7 @@ class OverlayController:
 
     @staticmethod
     def _fade(layer, frm: float, to: float, dur: float) -> None:
-        from QuartzCore import CABasicAnimation
+        from Quartz import CABasicAnimation
 
         layer.setOpacity_(to)
         anim = CABasicAnimation.animationWithKeyPath_("opacity")
