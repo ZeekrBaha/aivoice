@@ -60,6 +60,45 @@ AudioCapture.start()    AudioCapture.stop()
 
 ---
 
+## On-screen feedback
+
+While you dictate, a floating glass overlay appears at the bottom-center of the
+screen so you always know what the app is doing — no need to glance at the menu
+bar.
+
+```
+   Hold ⌥                        Release ⌥                   Text pasted
+      │                              │                            │
+      ▼                              ▼                            ▼
+ ┌─────────────────────┐    ┌─────────────────────┐      (overlay fades
+ │ ▁▃▅█▆▃▂  Recording… │ →  │  ◐  Transcribing…   │ →      and scales out)
+ └─────────────────────┘    └─────────────────────┘
+  live waveform reacts        indeterminate spinner
+  to your real mic level      while STT + cleanup run
+```
+
+- **Recording** — a live waveform whose bars react to your actual microphone
+  level (louder speech → taller bars), so you can see the mic is capturing.
+- **Transcribing** — the waveform morphs into a spinner while speech-to-text and
+  the optional LLM cleanup run; it stays up until the text is pasted.
+- **Done / empty / error** — the overlay always springs away, so it never hangs.
+- **Reduce Motion** — if macOS *Reduce Motion* is on, the waveform is replaced by
+  a static dot and the spring transitions become plain fades.
+
+Implementation notes:
+
+- `OverlayController` (`src/aivoice/ui/overlay.py`) owns a single reusable
+  borderless, non-activating, click-through `NSPanel`. The dictation pipeline runs
+  on a background thread and the audio tap on PortAudio's thread, so every public
+  method marshals onto the main thread via `PyObjCTools.AppHelper.callAfter`.
+- Mic levels feed the waveform through `AudioCapture.on_level`, computed by the
+  pure `aivoice.pipeline.levels` helpers (RMS → dB-normalized `0..1`). The
+  phase→display mapping (`OverlayPresentation`) and the waveform model
+  (`WaveformBuffer`) are pure and unit-tested; the AppKit layer is verified by a
+  manual smoke test (see `docs/overlay-hud-spec.md`).
+
+---
+
 ## Architecture
 
 ```
@@ -69,7 +108,8 @@ src/aivoice/
 ├── version.py
 │
 ├── pipeline/
-│   ├── audio.py           # AudioCapture — sounddevice InputStream, async start/stop
+│   ├── audio.py           # AudioCapture — sounddevice InputStream + on_level meter
+│   ├── levels.py          # RMS → dB-normalized 0..1 mic-level helpers (pure)
 │   ├── vad.py             # VAD — silero-vad ONNX silence trimmer
 │   ├── inject.py          # ClipboardInjector — NSPasteboard + Cmd+V paste
 │   ├── orchestrator.py    # Orchestrator — wires audio→vad→stt→cleaner→inject
@@ -87,7 +127,8 @@ src/aivoice/
 │
 ├── ui/
 │   ├── menubar.py         # rumps NSStatusBar app + async pipeline thread
-│   └── hotkey.py          # pynput global hotkey listener
+│   ├── hotkey.py          # pynput global hotkey listener
+│   └── overlay.py         # on-screen glass overlay (waveform + spinner)
 │
 └── utils/
     ├── perms.py           # macOS TCC permission probes
@@ -233,7 +274,7 @@ uv sync --extra dev
 uv run pytest
 ```
 
-23 tests covering: config loading, audio capture, VAD trimming, STT engines, cleanup prompts, clipboard injection, orchestrator pipeline (including `initial_prompt` plumbing and trailing-silence padding), and hotkey guard logic.
+41 tests covering: config loading, audio capture, VAD trimming, STT engines, cleanup prompts, clipboard injection, orchestrator pipeline (including `initial_prompt` plumbing and trailing-silence padding), hotkey guard logic, mic-level math, and the overlay phase/waveform logic.
 
 ---
 
@@ -242,7 +283,7 @@ uv run pytest
 ```
 ai-voice-dictation/
 ├── src/aivoice/        # Main package
-├── tests/              # pytest test suite (20 tests)
+├── tests/              # pytest test suite (41 tests)
 ├── scripts/
 │   ├── build_app.sh    # Builds dist/aivoice.app
 │   └── codesign_dev.sh # Ad-hoc codesign for local dev
