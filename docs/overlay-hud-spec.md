@@ -169,6 +169,24 @@ finally → hide() → spring-out (fade+scale)
 ## Files touched
 
 - **Create** `src/aivoice/pipeline/levels.py` + `tests/test_levels.py`.
-- **Modify** `src/aivoice/pipeline/audio.py` (+ `tests/test_audio.py`) — `on_level`.
-- **Create/extend** `src/aivoice/ui/overlay.py` + `tests/test_overlay.py`.
+- **Modify** `src/aivoice/pipeline/audio.py` (+ `tests/test_audio_levels.py`) — `on_level`.
+- **Create/extend** `src/aivoice/ui/overlay.py` + `tests/test_overlay.py`, `tests/test_waveform.py`.
 - **Modify** `src/aivoice/ui/menubar.py` — build wired `AudioCapture`, drive overlay.
+
+## Manual QA — recording overlay
+
+Run `uv run aivoice` (grant Microphone, Accessibility, and Input Monitoring if
+prompted; restart after granting). Then:
+
+- [ ] **Hold ⌥** → a frosted glass pill **springs in** bottom-center with a
+  **live waveform** + "Recording…". Speak: the bars **react to your voice**
+  (louder = taller), quieter when silent.
+- [ ] **Release ⌥** → the pill **morphs to a spinner** + "Transcribing…" and
+  **stays** until the text is pasted at the cursor.
+- [ ] After paste → the pill **springs/fades out**.
+- [ ] **Too-short:** tap-and-release ⌥ instantly → spinner shows briefly, then
+  the pill disappears (no stuck panel; VAD trims to empty, `finally` hides it).
+- [ ] **Reduce Motion ON** (System Settings → Accessibility → Display → Reduce
+  Motion) → static red dot instead of the waveform, plain fades (no scale/spring),
+  spinner still spins.
+- [ ] The menu-bar emoji still cycles 🎙 → 🔴 → ⚙️ → 🎙 alongside the overlay.
