@@ -22,6 +22,7 @@ from aivoice.pipeline.stt.cloud_groq import CloudGroqEngine
 from aivoice.pipeline.stt.local_mlx import LocalMLXEngine
 from aivoice.pipeline.vad import VAD
 from aivoice.ui.hotkey import HoldHotkey
+from aivoice.ui.overlay import OverlayController
 from aivoice.utils.perms import check_all
 from aivoice.version import __version__
 
@@ -40,6 +41,7 @@ class AivoiceApp(rumps.App):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._orch: Orchestrator | None = None
         self._hotkey: HoldHotkey | None = None
+        self._overlay = OverlayController()
 
         self.menu = [
             rumps.MenuItem(f"aivoice {__version__}"),
@@ -93,8 +95,14 @@ class AivoiceApp(rumps.App):
             else:
                 cleaner = OpenAICleaner(self.settings.openai_cleanup_model)
 
+        # Build capture here so we can stream its mic level to the overlay's
+        # live waveform. on_level fires on the PortAudio thread; OverlayController
+        # marshals to the main thread internally.
+        capture = AudioCapture()
+        capture.on_level = self._overlay.push_level
+
         self._orch = Orchestrator(
-            audio=AudioCapture(),
+            audio=capture,
             vad=VAD(),
             stt=stt,
             cleaner=cleaner,
@@ -113,20 +121,24 @@ class AivoiceApp(rumps.App):
 
     async def _on_press(self) -> None:
         self.title = LISTENING
+        self._overlay.show_recording()
         try:
             await self._orch.on_press()
         except Exception:
             log.exception("on_press failed")
             self.title = IDLE
+            self._overlay.hide()
 
     async def _on_release(self) -> None:
         self.title = WORKING
+        self._overlay.show_processing()
         try:
             await self._orch.on_release()
         except Exception:
             log.exception("on_release failed")
         finally:
             self.title = IDLE
+            self._overlay.hide()
 
 
 def main() -> None:
