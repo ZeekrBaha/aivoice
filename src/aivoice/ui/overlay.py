@@ -93,7 +93,7 @@ class WaveformBuffer:
 # so importing this module (and running the pure tests above) never needs a GUI.
 
 # Panel + waveform geometry.
-_PANEL_W = 220.0
+_PANEL_W = 340.0
 _PANEL_H = 60.0
 _MARGIN_BOTTOM = 130.0
 _CORNER = 16.0
