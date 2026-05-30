@@ -1,183 +1,174 @@
-# On-Screen Recording Overlay — Design Spec
+# On-Screen Recording Overlay — Design Spec (v2, premium)
 
 **Date:** 2026-05-30
-**Status:** Draft for review
+**Status:** Approved design (upgraded to live waveform + spring transitions)
 **Branch:** `feature/recording-overlay-hud`
 **Project:** `ai-voice-dictation` (Python menu-bar app, `aivoice`)
 
 ## Goal
 
-When the user holds the dictation key (⌥), a small panel **appears on screen**
-showing it is recording (a pulsing red dot + "Recording…"). When the key is
-released, the panel switches to an indeterminate **spinner** ("Transcribing…")
-while STT + optional LLM cleanup run. When the text is injected (or on
-error/empty), the panel **disappears**.
+When the user holds ⌥, a polished glass panel **springs onto the screen** showing
+a **live waveform that reacts to the real microphone level**. On release, it
+**morphs to an indeterminate spinner** ("Transcribing…") while STT + optional LLM
+cleanup run. When the text is injected (or on error/empty), the panel **fades and
+scales away**. Target feel: Cluely / Wispr Flow — a dark, frosted, unobtrusive
+pill with smooth motion.
 
 ## Current behavior (verified)
 
-- Menu-bar app built on `rumps`; the only feedback today is the menu-bar emoji
-  changing: `🎙` idle → `🔴` listening → `⚙️` working → `🎙` idle
-  (`ui/menubar.py:30-33`, `_on_press`/`_on_release` at `:114-129`).
-- Push-to-talk is ⌥ via `pynput` (`ui/hotkey.py`), re-entrant (ignores repeat
-  press while held).
-- The pipeline (`Orchestrator.on_release`) is **all-at-once**: record → VAD trim
-  → STT → optional cleanup → inject. There is no streaming, so a single
-  indeterminate spinner is the correct processing indicator.
-- **Threading (the critical constraint):** `rumps`/AppKit run the main run loop
-  on the **main thread**. The pipeline runs on a **background asyncio thread**
-  (`menubar.py:54`, `_run_loop`). `_on_press`/`_on_release` execute on that
-  background thread. **All NSPanel creation and mutation must be marshaled to the
-  main thread.**
+- `rumps` menu-bar app; only feedback today is the menu-bar emoji
+  (`🎙`→`🔴`→`⚙️`→`🎙`, `ui/menubar.py:30-33`, handlers `:114-129`).
+- Push-to-talk ⌥ via `pynput` (`ui/hotkey.py`), re-entrant.
+- Pipeline (`Orchestrator.on_release`) is all-at-once (record → VAD → STT →
+  cleanup → inject); no streaming → one indeterminate spinner is correct.
+- **Threading constraint (critical):** AppKit/`rumps` run on the **main thread**;
+  the pipeline + hotkey callbacks run on a **background asyncio thread**
+  (`menubar.py:54`). The PortAudio capture callback runs on **its own audio
+  thread**. All NSPanel work must be marshaled to the main thread.
 
-## Decisions (from review)
+## Decisions
 
-- **Floating overlay panel** (a real on-screen `NSPanel`), not just the menu-bar glyph.
-- **Recording animation:** pulsing red dot + "Recording…". No audio-pipeline change.
-- **Processing:** native `NSProgressIndicator` (indeterminate spinner) + "Transcribing…".
-- Keep the existing menu-bar emoji changes too — they're free and complementary.
+- **Floating glass NSPanel** (frosted `NSVisualEffectView`, rounded, dark, shadow,
+  click-through), bottom-center.
+- **Recording:** live waveform bars driven by **real mic RMS**. Reduce Motion →
+  static dot fallback.
+- **Processing:** native `NSProgressIndicator` (indeterminate spinner).
+- **Transitions:** spring entrance (fade + scale-up), waveform↔spinner crossfade,
+  fade + scale-down exit. Reduce Motion → plain fades.
+- Keep the menu-bar emoji (complementary, free).
 
-## Design
+## Architecture
 
-### New module: `src/aivoice/ui/overlay.py`
+### Pipeline change (small, tested): mic level callback
 
-Two pieces, split so the logic is testable without a running NSApplication:
-
-**1. `OverlayPresentation` (pure, unit-tested).**
-A tiny pure mapping from phase → what the panel should show. No AppKit imports.
+`src/aivoice/pipeline/levels.py` (pure, unit-tested):
 
 ```python
-class OverlayPhase(str, Enum):
-    IDLE = "idle"
-    RECORDING = "recording"
-    PROCESSING = "processing"
+def rms(block: np.ndarray) -> float          # sqrt(mean(square)), 0 for empty
+def normalized(rms_value: float, floor_db: float = -50) -> float  # dB → 0..1, clamped
+```
+
+`AudioCapture` (`pipeline/audio.py`): add `on_level: Callable[[float], None] | None`.
+In the existing PortAudio `_callback`, after copying the block, compute
+`normalized(rms(block))` and invoke `on_level(level)` if set. The callback runs on
+the audio thread; the consumer marshals to main. The capture's recorded-frames
+behavior is unchanged.
+
+### Overlay: `src/aivoice/ui/overlay.py`
+
+**1. `OverlayPresentation` (pure, unit-tested).** Phase → what to show, via a
+single `indicator` value (cleaner than multiple booleans, and lets Reduce Motion
+swap waveform→dot):
+
+```python
+class OverlayPhase(str, Enum): IDLE, RECORDING, PROCESSING
+class OverlayIndicator(str, Enum): NONE, WAVEFORM, DOT, SPINNER
 
 @dataclass(frozen=True)
 class OverlayPresentation:
     visible: bool
-    label: str          # "" when idle
-    dot_pulsing: bool   # red dot shown + animated
-    spinner: bool       # spinner shown + animated
-
+    label: str
+    indicator: OverlayIndicator
     @classmethod
-    def for_phase(cls, phase: OverlayPhase, reduce_motion: bool = False) -> "OverlayPresentation":
-        ...
+    def for_phase(cls, phase, reduce_motion=False) -> "OverlayPresentation": ...
 ```
 
 Mapping:
-- `IDLE`      → `visible=False, label="",            dot_pulsing=False, spinner=False`
-- `RECORDING` → `visible=True,  label="Recording…",  dot_pulsing=not reduce_motion, spinner=False`
-- `PROCESSING`→ `visible=True,  label="Transcribing…",dot_pulsing=False, spinner=True`
+- `IDLE` → `visible=False, label="", indicator=NONE`
+- `RECORDING` → `visible=True, label="Recording…", indicator=WAVEFORM` (or `DOT` if `reduce_motion`)
+- `PROCESSING` → `visible=True, label="Transcribing…", indicator=SPINNER`
 
-(When `reduce_motion` is true, the dot is shown but static — `dot_pulsing=False`.)
-
-**2. `OverlayController` (AppKit, thin, smoke-tested manually).**
-Owns the `NSPanel` + content view and exposes a thread-safe API:
+**2. `OverlayController` (AppKit, thin).** Thread-safe public API callable from any
+thread (each marshals via `PyObjCTools.AppHelper.callAfter`):
 
 ```python
-class OverlayController:
-    def show_recording(self) -> None: ...
-    def show_processing(self) -> None: ...
-    def hide(self) -> None: ...
+show_recording() / show_processing() / hide()
+push_level(level: float)   # feed a 0..1 mic sample to the waveform
 ```
 
-- Each method marshals to the main thread via
-  `PyObjCTools.AppHelper.callAfter`, so the background pipeline thread can call
-  them directly. The actual panel work runs on main.
-- The panel is created **lazily on first show, on the main thread**. It is a
-  borderless, non-activating, floating `NSPanel` with a rounded translucent
-  background (`NSVisualEffectView`), positioned bottom-center of the main screen.
-- Content: a red dot view + an `NSProgressIndicator` (spinner style) + an
-  `NSTextField` label. Per phase, `OverlayController` reads
-  `OverlayPresentation.for_phase(...)` and shows/hides/animates each element.
-- Pulsing dot: `CABasicAnimation` on the dot layer's `opacity` (and a subtle
-  `transform.scale`), `autoreverses`, `repeatCount = infinity`. Removed when not
-  recording.
-- **Reduce Motion:** read
-  `NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion()` and
-  pass into `for_phase`; when true, skip the pulse (static dot) — the spinner is
-  a system control that already honors the setting.
-- `hide()` orders the panel out (kept allocated for reuse).
+- Lazily builds one reusable borderless, non-activating, floating `NSPanel`
+  (`ignoresMouseEvents=True`) on the main thread; content is a rounded
+  `NSVisualEffectView` (dark, frosted).
+- **Waveform:** a custom layer-backed view holding N `CALayer` bars (newest on the
+  right, scrolling). `push_level` appends to a rolling buffer and updates bar
+  heights; under Reduce Motion the waveform view is hidden and a static dot shown.
+- **Spinner:** `NSProgressIndicator` (spinning), `displayedWhenStopped=False`.
+- **Spring transitions:** `CASpringAnimation` on the content layer's
+  `transform.scale` + opacity for entrance; crossfade swapping waveform↔spinner;
+  scale-down + fade for exit. Reduce Motion → plain `CABasicAnimation` opacity
+  fades (no scale).
+- **Reduce Motion:** `NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion()`.
+- Defensive: all AppKit imported lazily inside methods (so importing the module —
+  and running the pure tests — needs no GUI); every main-thread block wrapped so a
+  failure logs and never crashes the app; `NSScreen.mainScreen()` None-guarded.
 
-### Integration: `src/aivoice/ui/menubar.py`
-
-Minimal edits to the existing handlers:
+### Integration: `menubar.py`
 
 ```python
-# in __init__ / _async_main: create the controller (main thread is fine here)
 self._overlay = OverlayController()
+# when building AudioCapture:
+capture = AudioCapture()
+capture.on_level = lambda lvl: self._overlay.push_level(lvl)
+...
+async def _on_press(self):
+    self.title = LISTENING; self._overlay.show_recording()
+    try: await self._orch.on_press()
+    except Exception: log.exception("on_press failed"); self.title = IDLE; self._overlay.hide()
 
-async def _on_press(self) -> None:
-    self.title = LISTENING
-    self._overlay.show_recording()
-    try:
-        await self._orch.on_press()
-    except Exception:
-        log.exception("on_press failed")
-        self.title = IDLE
-        self._overlay.hide()
-
-async def _on_release(self) -> None:
-    self.title = WORKING
-    self._overlay.show_processing()
-    try:
-        await self._orch.on_release()
-    finally:
-        self.title = IDLE
-        self._overlay.hide()
+async def _on_release(self):
+    self.title = WORKING; self._overlay.show_processing()
+    try: await self._orch.on_release()
+    except Exception: log.exception("on_release failed")
+    finally: self.title = IDLE; self._overlay.hide()
 ```
 
-The existing `try/finally` already guarantees the spinner is always dismissed —
-including the empty-audio / error paths inside `Orchestrator.on_release` (which
-swallows its own exceptions and returns).
+`Orchestrator` currently constructs `AudioCapture()` internally (`menubar.py:97`).
+To wire `on_level`, build the `AudioCapture` in `menubar` and pass it into
+`Orchestrator` (the `Orchestrator` already accepts an `audio` arg — just hand it
+the pre-wired instance).
 
 ## Data flow
 
 ```
-Hold ⌥  → _on_press  → overlay.show_recording()  → (callAfter) panel fades in, dot pulses
-Release → _on_release → overlay.show_processing() → (callAfter) dot→spinner, "Transcribing…"
+Hold ⌥ → show_recording() → spring-in glass pill, waveform live
+         audio thread → rms→normalized → on_level → push_level → bars react
+Release → show_processing() → crossfade waveform→spinner, "Transcribing…"
           await on_release() (STT + cleanup + inject)
-finally → overlay.hide() → (callAfter) panel orders out
+finally → hide() → spring-out (fade+scale)
 ```
 
 ## Error handling / edge cases
 
-- **Empty audio / VAD trims everything / STT empty:** `on_release` returns
-  normally → `finally` hides the overlay. Spinner never hangs.
-- **Pipeline exception:** swallowed inside `Orchestrator` (logged); `finally`
-  still hides. (And `_on_press` failure path hides explicitly.)
-- **Rapid release→press:** `show_recording` after `hide`/`show_processing` just
-  resets the phase; calls are idempotent and ordered on the main thread.
-- **Reduce Motion on:** static dot, system spinner (honors setting).
-- **No main screen / headless:** `OverlayController` guards `NSScreen.mainScreen()`
-  being `None` (skips positioning); never crashes the app.
-- **Permissions not granted:** unchanged — the app already gates on perms before
-  wiring the hotkey, so the overlay is only ever driven when dictation is live.
+- Empty/too-short/VAD-trims-all/STT-empty → `on_release` returns → `finally` hides.
+- Pipeline exception → swallowed in `Orchestrator` (logged); `finally` hides.
+- Rapid release→press → idempotent, ordered on main thread; spring re-entry safe.
+- Reduce Motion → static dot + plain fades; spinner honors system setting.
+- No main screen / no pyobjc → controller no-ops, app keeps working.
 
 ## Testing
 
-This project uses pytest + TDD (see `docs/plan.md`). AppKit panels can't run
-headlessly, so:
-
-- **Unit-tested (pure):** `OverlayPresentation.for_phase` for all three phases,
-  and the `reduce_motion=True` recording case (dot static). New file
-  `tests/test_overlay.py`. No AppKit import, runs in CI.
-- **Manual smoke test:** documented steps to run `aivoice`, hold ⌥, and confirm
-  the panel appears (pulsing dot), switches to the spinner on release, and
-  disappears after paste — plus the too-short (tap-and-release) and Reduce-Motion
-  cases.
+- **Unit (pure, CI):** `OverlayPresentation.for_phase` all phases + reduce-motion;
+  `levels.rms` (empty, constant, half-amplitude) and `levels.normalized` (silence
+  floor, 0 dB ceiling, midpoint, clamp). Files: `tests/test_overlay.py`,
+  `tests/test_levels.py`.
+- **Existing `tests/test_audio.py`** stays green; add one test that `on_level` is
+  invoked with a 0..1 float during capture (or unit-test the callback wiring with a
+  synthetic block to avoid mic dependence).
+- **Manual smoke:** documented — spring-in, live waveform reacts to voice,
+  morph to spinner, spring-out; too-short; Reduce Motion.
 
 ## Scope guardrails (YAGNI)
 
-- No live waveform / no audio-pipeline change (pulsing dot only).
-- No streaming/partial results.
-- No new dependencies — `pyobjc-framework-Cocoa`/`-Quartz` are already deps;
-  `CABasicAnimation` (QuartzCore) and `PyObjCTools.AppHelper` ship with pyobjc.
-- No change to the hotkey, STT, cleanup, or injection.
-- Keep the menu-bar emoji feedback as-is (complementary).
+- No streaming/partial transcription.
+- No new dependencies (pyobjc Cocoa/Quartz already present; QuartzCore +
+  `PyObjCTools.AppHelper` ship with pyobjc; numpy already a dep).
+- No change to hotkey, STT, cleanup, or injection logic (only `AudioCapture` gains
+  an optional callback, and `menubar` constructs it).
+- Menu-bar emoji kept.
 
 ## Files touched
 
-- **Create** `src/aivoice/ui/overlay.py` — `OverlayPhase`, `OverlayPresentation`, `OverlayController`.
-- **Create** `tests/test_overlay.py` — unit tests for `OverlayPresentation`.
-- **Modify** `src/aivoice/ui/menubar.py` — instantiate controller; call show/hide in `_on_press`/`_on_release`.
-- **Modify** `README.md` / `docs/` — short note + manual QA steps (optional).
+- **Create** `src/aivoice/pipeline/levels.py` + `tests/test_levels.py`.
+- **Modify** `src/aivoice/pipeline/audio.py` (+ `tests/test_audio.py`) — `on_level`.
+- **Create/extend** `src/aivoice/ui/overlay.py` + `tests/test_overlay.py`.
+- **Modify** `src/aivoice/ui/menubar.py` — build wired `AudioCapture`, drive overlay.
