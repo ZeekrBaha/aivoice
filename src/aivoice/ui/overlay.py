@@ -215,22 +215,30 @@ class OverlayController:
     def _ensure_panel(self) -> None:
         if self._panel is not None:
             return
+        import AppKit
         from AppKit import (
             NSBackingStoreBuffered,
             NSColor,
             NSPanel,
             NSProgressIndicator,
-            NSProgressIndicatorStyleSpinning,
             NSTextField,
             NSView,
             NSVisualEffectBlendingModeBehindWindow,
-            NSVisualEffectMaterialHUDWindow,
             NSVisualEffectStateActive,
             NSVisualEffectView,
             NSWindowStyleMaskBorderless,
             NSWindowStyleMaskNonactivatingPanel,
         )
         from Foundation import NSMakeRect
+
+        # A few enum constants aren't exported under their modern names in older
+        # pyobjc builds; resolve with fallbacks to their documented raw values.
+        spinning_style = getattr(
+            AppKit,
+            "NSProgressIndicatorStyleSpinning",
+            getattr(AppKit, "NSProgressIndicatorSpinningStyle", 1),
+        )
+        hud_material = getattr(AppKit, "NSVisualEffectMaterialHUDWindow", 13)
 
         # macOS floating window level constant (NSFloatingWindowLevel == 3).
         floating_level = 3
@@ -249,7 +257,7 @@ class OverlayController:
         content = NSVisualEffectView.alloc().initWithFrame_(
             NSMakeRect(0, 0, _PANEL_W, _PANEL_H)
         )
-        content.setMaterial_(NSVisualEffectMaterialHUDWindow)
+        content.setMaterial_(hud_material)
         content.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
         content.setState_(NSVisualEffectStateActive)
         content.setWantsLayer_(True)
@@ -281,7 +289,7 @@ class OverlayController:
         spinner = NSProgressIndicator.alloc().initWithFrame_(
             NSMakeRect(wave_x, (_PANEL_H - 18) / 2.0, 18, 18)
         )
-        spinner.setStyle_(NSProgressIndicatorStyleSpinning)
+        spinner.setStyle_(spinning_style)
         spinner.setDisplayedWhenStopped_(False)
         spinner.setHidden_(True)
         content.addSubview_(spinner)
