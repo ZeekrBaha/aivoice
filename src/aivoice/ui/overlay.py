@@ -399,6 +399,7 @@ class OverlayController:
         from Quartz import CABasicAnimation
 
         dur = 0.14
+        layer.setOpacity_(0.0)
         fade = CABasicAnimation.animationWithKeyPath_("opacity")
         fade.setFromValue_(1.0)
         fade.setToValue_(0.0)
