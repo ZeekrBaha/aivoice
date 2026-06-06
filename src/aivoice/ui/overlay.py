@@ -122,6 +122,8 @@ class OverlayController:
         self._label = None            # NSTextField
         self._buffer = WaveformBuffer(capacity=_BAR_COUNT)
         self._recording = False
+        self._phase = OverlayPhase.IDLE
+        self._transition_id = 0
 
     # -- public API (any thread) ---------------------------------------- #
 
@@ -163,6 +165,10 @@ class OverlayController:
 
     def _apply(self, phase: OverlayPhase) -> None:
         try:
+            previous_phase = self._phase
+            self._phase = phase
+            self._transition_id += 1
+            transition_id = self._transition_id
             reduce_motion = self._reduce_motion()
             pres = OverlayPresentation.for_phase(phase, reduce_motion=reduce_motion)
             self._recording = pres.indicator in (
@@ -170,13 +176,15 @@ class OverlayController:
                 OverlayIndicator.DOT,
             )
             if not pres.visible:
-                self._animate_out(reduce_motion)
+                self._animate_out(reduce_motion, transition_id)
                 return
             self._ensure_panel()
+            self._cancel_out_animation()
             self._label.setStringValue_(pres.label)
             self._render(pres)
             self._panel.orderFrontRegardless()
-            self._animate_in(reduce_motion)
+            if previous_phase is OverlayPhase.IDLE:
+                self._animate_in(reduce_motion)
         except Exception:  # pragma: no cover - never crash the host app
             log.exception("overlay apply failed")
 
@@ -379,7 +387,7 @@ class OverlayController:
         spring.setDuration_(spring.settlingDuration())
         layer.addAnimation_forKey_(spring, "spring-in")
 
-    def _animate_out(self, reduce_motion: bool) -> None:
+    def _animate_out(self, reduce_motion: bool, transition_id: int) -> None:
         if self._panel is None:
             return
         panel = self._panel
@@ -403,11 +411,11 @@ class OverlayController:
             scale.setDuration_(dur)
             layer.addAnimation_forKey_(scale, "scale-out")
 
-        # Order the panel out after the fade completes. If the user starts
-        # recording again within the window, _apply has already set _recording
-        # True and re-shown the panel, so we guard on the live phase.
+        # Order the panel out after the fade completes only if this is still the
+        # latest idle transition. Otherwise a stale hide timer can close the
+        # panel after recording has already moved into the processing spinner.
         def _finish() -> None:
-            if not self._recording:
+            if self._should_finish_hide(transition_id):
                 panel.orderOut_(None)
 
         try:
@@ -416,6 +424,17 @@ class OverlayController:
             AppHelper.callLater(dur + 0.02, _finish)
         except Exception:  # pragma: no cover
             panel.orderOut_(None)
+
+    def _cancel_out_animation(self) -> None:
+        if self._content is None:
+            return
+        layer = self._content.layer()
+        layer.removeAnimationForKey_("fade-out")
+        layer.removeAnimationForKey_("scale-out")
+        layer.setOpacity_(1.0)
+
+    def _should_finish_hide(self, transition_id: int) -> bool:
+        return self._phase is OverlayPhase.IDLE and self._transition_id == transition_id
 
     @staticmethod
     def _fade(layer, frm: float, to: float, dur: float) -> None:
@@ -427,4 +446,3 @@ class OverlayController:
         anim.setToValue_(to)
         anim.setDuration_(dur)
         layer.addAnimation_forKey_(anim, "fade")
-

@@ -1,4 +1,9 @@
-from aivoice.ui.overlay import OverlayIndicator, OverlayPhase, OverlayPresentation
+from aivoice.ui.overlay import (
+    OverlayController,
+    OverlayIndicator,
+    OverlayPhase,
+    OverlayPresentation,
+)
 
 
 def test_idle_is_hidden():
@@ -26,3 +31,15 @@ def test_processing_shows_spinner():
     assert p.visible is True
     assert p.label == "Transcribing…"
     assert p.indicator is OverlayIndicator.SPINNER
+
+
+def test_stale_hide_does_not_finish_after_processing_starts():
+    c = OverlayController()
+    c._phase = OverlayPhase.IDLE
+    c._transition_id = 1
+    assert c._should_finish_hide(1) is True
+
+    c._phase = OverlayPhase.PROCESSING
+    c._transition_id = 2
+    assert c._should_finish_hide(1) is False
+    assert c._should_finish_hide(2) is False
