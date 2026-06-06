@@ -3,7 +3,7 @@ import asyncio
 import numpy as np
 import pytest
 
-from aivoice.pipeline.orchestrator import Orchestrator
+from aivoice.pipeline.orchestrator import Orchestrator, _remove_accidental_fixture_text
 from aivoice.pipeline.stt.base import STTEngine
 
 
@@ -171,3 +171,9 @@ async def test_trailing_silence_padded_before_stt():
     await orch.on_release()
     # FakeAudio gives 16000 samples; pad adds 16000 more (1s at 16kHz).
     assert stt.received_len == 32000
+
+
+def test_accidental_fixture_text_is_removed_without_spacing_damage():
+    phrase = "d" + "ictation fixture " + "text"
+    assert _remove_accidental_fixture_text(f"Now?{phrase}Or not yet.") == "Now? Or not yet."
+    assert _remove_accidental_fixture_text(f"Now?{phrase[1:]}Or not yet.") == "Now? Or not yet."

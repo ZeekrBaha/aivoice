@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Protocol
 
 import numpy as np
 
 log = logging.getLogger(__name__)
+
+_ACCIDENTAL_FIXTURE_RE = re.compile(r"\s*d?ictation\s+fixture\s+text\s*", re.IGNORECASE)
 
 
 class _AudioLike(Protocol):
@@ -82,10 +85,12 @@ class Orchestrator:
                 return
             audio = _pad_trailing_silence(audio, self.TAIL_PAD_SECONDS)
             text = await self.stt.transcribe(audio, initial_prompt=self._initial_prompt)
+            text = _remove_accidental_fixture_text(text)
             if not text:
                 return
             if self.cleaner is not None:
                 text = await self.cleaner.clean(text, mode=self.mode, vocabulary=self.vocabulary)
+                text = _remove_accidental_fixture_text(text)
             if not text:
                 return
             await self.injector.inject(text)
@@ -109,6 +114,14 @@ def _build_initial_prompt(vocabulary: list[str]) -> str | None:
     if len(joined) > 800:
         joined = joined[-800:]
     return f"Glossary: {joined}."
+
+
+def _remove_accidental_fixture_text(text: str) -> str:
+    cleaned = _ACCIDENTAL_FIXTURE_RE.sub(" ", text)
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r"([,.;:!?])([A-Za-z])", r"\1 \2", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
 
 
 def _pad_trailing_silence(audio: np.ndarray, seconds: float, samplerate: int = 16000) -> np.ndarray:
