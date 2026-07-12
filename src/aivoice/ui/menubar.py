@@ -46,7 +46,7 @@ class AivoiceApp(rumps.App):
         self.menu = [
             rumps.MenuItem(f"aivoice {__version__}"),
             None,
-            rumps.MenuItem(f"Hotkey: ⌥ (hold)"),
+            rumps.MenuItem("Hotkey: ⌥ (hold)"),
             rumps.MenuItem(f"Engine: {self.settings.stt_engine}"),
             rumps.MenuItem(f"Cleanup: {'on (ollama)' if self.settings.cleanup_enabled else 'off'}"),
             None,
