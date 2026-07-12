@@ -274,7 +274,7 @@ uv sync --extra dev
 uv run pytest
 ```
 
-41 tests covering: config loading, audio capture, VAD trimming, STT engines, cleanup prompts, clipboard injection, orchestrator pipeline (including `initial_prompt` plumbing and trailing-silence padding), hotkey guard logic, mic-level math, and the overlay phase/waveform logic.
+Covers: config loading, audio capture, VAD trimming, STT engines, cleanup prompts, clipboard injection, orchestrator pipeline (including `initial_prompt` plumbing and trailing-silence padding), hotkey guard logic, mic-level math, and the overlay phase/waveform logic.
 
 ---
 
@@ -283,7 +283,7 @@ uv run pytest
 ```
 ai-voice-dictation/
 ├── src/aivoice/        # Main package
-├── tests/              # pytest test suite (41 tests)
+├── tests/              # pytest test suite
 ├── scripts/
 │   ├── build_app.sh    # Builds dist/aivoice.app
 │   └── codesign_dev.sh # Ad-hoc codesign for local dev
@@ -292,3 +292,12 @@ ai-voice-dictation/
 ├── pyproject.toml      # Project metadata + dependencies
 └── .env                # GROQ_API_KEY (never committed)
 ```
+
+---
+
+## Limitations / next steps
+
+- **Local dev distribution only.** `scripts/codesign_dev.sh` ad-hoc signs the `.app` to skip the Gatekeeper prompt on first launch — this is not a notarized release path. There's no App Store / notarized-DMG distribution story; anyone else running this needs their own dev machine and Xcode command-line tools.
+- **Apple Silicon only for local transcription.** `mlx-whisper` is gated on `platform_machine == 'arm64'` — Intel Macs fall back to the cloud Groq engine (or fail if no `GROQ_API_KEY` is set). No local-STT path for Intel.
+- **No type checker.** For a pyobjc/AppKit-heavy codebase, a real type checker (pyright, basic mode) would catch import/attribute errors static analysis alone can't — exactly the class of bug fixed in an earlier commit (`683f1aa`, a Quartz import error).
+- **No documented language/locale testing.** Whisper is multilingual by default and vocabulary biasing exists, but this README doesn't state which languages transcription accuracy has actually been verified against.
