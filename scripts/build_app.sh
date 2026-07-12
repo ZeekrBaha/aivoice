@@ -4,6 +4,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+LAUNCH_REPO="${AIVOICE_RUNTIME_REPO:-$REPO}"
 cd "$REPO"
 
 APP="dist/aivoice.app"
@@ -23,11 +24,13 @@ if [ ! -f "$ICON_SRC" ]; then
 fi
 cp "$ICON_SRC" "$RESOURCES/icon.icns"
 
-# Launcher script — runs aivoice inside the repo's venv
-cat > "$MACOS/aivoice" <<'LAUNCHER'
+# Launcher script — runs aivoice inside this repo's venv even when the
+# .app bundle is copied to /Applications.
+cat > "$MACOS/aivoice" <<LAUNCHER
 #!/usr/bin/env bash
-DIR="$(cd "$(dirname "$0")/../../../.." && pwd)"
-exec "$DIR/.venv/bin/python" -m aivoice "$@"
+REPO="$LAUNCH_REPO"
+cd "\$REPO"
+exec "\$REPO/.venv/bin/python" -m aivoice "\$@"
 LAUNCHER
 chmod +x "$MACOS/aivoice"
 

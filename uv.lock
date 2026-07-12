@@ -23,6 +23,7 @@ dependencies = [
     { name = "rumps" },
     { name = "silero-vad" },
     { name = "sounddevice" },
+    { name = "soundfile" },
 ]
 
 [package.optional-dependencies]
@@ -30,7 +31,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
-    { name = "soundfile" },
 ]
 
 [package.metadata]
@@ -54,7 +54,7 @@ requires-dist = [
     { name = "rumps", specifier = ">=0.4.0" },
     { name = "silero-vad", specifier = ">=5.1.2" },
     { name = "sounddevice", specifier = ">=0.4.7" },
-    { name = "soundfile", marker = "extra == 'dev'", specifier = ">=0.12" },
+    { name = "soundfile", specifier = ">=0.12" },
 ]
 provides-extras = ["dev"]
 
